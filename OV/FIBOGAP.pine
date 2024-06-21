@@ -1,0 +1,110 @@
+//@version=5
+//
+//
+// EL SIGUIENTE SCRIPT DETECTA GAP Y TRAZA LINEAS RELEVANTES DE SOPORTE Y RESISTENCIA DENTRO DEL MISMO.
+//
+indicator(shorttitle="GAP_X", title="FIBOGAP", overlay=true)
+//
+//
+// ENTRADA DE DADOS
+// ------------------------------------------------------------------------------------------------------------------
+
+V=         input(title = "═══════════════ VISUALIZACao ════════════", defval = true, type = input.bool)
+VGA=       input(true, "👓 VER ULTIMO GAP ALTISTA")
+VGB=       input(true, "👓 VER ULTIMO GAP BAIXISTA")
+G_ALC=     input(title = "════════════════ GAP ALTISTA ═════════════", defval = true, type = input.bool)
+GA_PN1=    input.int(defval=38, title="🔹 % NIVEL 1 =", minval=1, maxval=99)
+GA_PN2=    input.int(defval=62, title="🔹 % NIVEL 2 =", minval=1, maxval=99)
+G_BAJ=     input(title = "════════════════ GAP BAIXISTA ═════════════", defval = true, type = input.bool)
+GB_PN1=    input.int(defval=38, title="🔹 % NIVEL 1 =", minval=1, maxval=99)
+GB_PN2=    input.int(defval=62, title="🔹 % NIVEL 2 =", minval=1, maxval=99)
+
+
+//
+// CALCULO
+// ------------------------------------------------------------------------------------------------------------------
+
+
+t1 = timeframe.period =="1" ? time(timeframe.period, "0930-0931"): timeframe.period =="2" ? time(timeframe.period, "0930-0932"):timeframe.period =="5" ? time(timeframe.period, "0930-0935"):timeframe.period =="15" ? time(timeframe.period, "0930-0945"):timeframe.period =="30" ? time(timeframe.period, "0930-1000"):timeframe.period =="60" ? time(timeframe.period, "0930-1030"): na
+
+dt = time - time[1]
+
+alto = security(syminfo.tickerid,timeframe.period, high)
+bajo = security(syminfo.tickerid,timeframe.period, low)
+
+gap_alc = bajo[0] > alto[1]
+gap_baj = alto[0] < bajo[1] 
+
+amp_gap = abs (bajo[0] - alto[1])
+amp_gap_2 = abs (bajo[1] - alto[0])
+
+// niveles fijos gap ALTISTA
+nivel_100_gap_alc = gap_alc ? alto[1] : na
+nivel_0_gap_alc = gap_alc ? bajo[0] : na
+nivel_50_gap_alc = gap_alc ? bajo[0] - amp_gap/2 : na
+// niveles variables gap ALTISTA
+nivel_1_gap_alc = bajo[0] - (GA_PN1*amp_gap/100)
+nivel_2_gap_alc = bajo[0] - (GA_PN2*amp_gap/100)
+
+// niveles fijos gap BAIXISTA
+nivel_100_gap_baj= gap_baj ? bajo[1] : na
+nivel_0_gap_baj= gap_baj ? alto[0] : na
+nivel_50_gap_baj = gap_baj ? bajo[1] - amp_gap_2/2 : na
+// niveles variables gap BAIXISTA
+nivel_1_gap_baj = bajo[1] - (GB_PN1*amp_gap_2/100)
+nivel_2_gap_baj = bajo[1] - (GB_PN2*amp_gap_2/100)
+
+
+//
+// PLOTEADO
+// ------------------------------------------------------------------------------------------------------------------
+
+
+if t1 > 0 and gap_alc == true and VGA == true
+    
+    l=line.new(time -1*dt , nivel_100_gap_alc, time, nivel_100_gap_alc, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=2)
+    l1=line.new(time -1*dt , nivel_0_gap_alc, time, nivel_0_gap_alc, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=2)
+    l2=line.new(time -1*dt , nivel_50_gap_alc, time, nivel_50_gap_alc, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=2)
+    l3=line.new(time -1*dt , nivel_1_gap_alc, time, nivel_1_gap_alc, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=1)
+    l4=line.new(time -1*dt , nivel_2_gap_alc, time, nivel_2_gap_alc, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=1)
+    l5=label.new(bar_index-1, nivel_0_gap_alc, style=label.style_none,text="0%" , size=size.normal, textcolor=color.black)
+    l6=label.new(bar_index-1, nivel_50_gap_alc, style=label.style_none,text="50%" , size=size.normal, textcolor=color.black)
+    l7=label.new(bar_index-1, nivel_100_gap_alc, style=label.style_none,text="100%" , size=size.normal, textcolor=color.black)
+    l8=label.new(bar_index-1, nivel_1_gap_alc, style=label.style_none,text=tostring(GA_PN1)+"%" , size=size.normal, textcolor=color.black)
+    l9=label.new(bar_index-1, nivel_2_gap_alc, style=label.style_none,text=tostring(GA_PN2)+"%" , size=size.normal, textcolor=color.black)
+    line.delete(l[1])
+    line.delete(l1[1])
+    line.delete(l2[1])
+    line.delete(l3[1])
+    line.delete(l4[1])
+    label.delete(l5[1])
+    label.delete(l6[1])
+    label.delete(l7[1])
+    label.delete(l8[1])
+    label.delete(l9[1])
+    
+if t1 > 0 and gap_baj == true and VGB == true
+    l10=line.new(time -1*dt , nivel_100_gap_baj, time, nivel_100_gap_baj, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=2)
+    l11=line.new(time -1*dt , nivel_0_gap_baj, time, nivel_0_gap_baj, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=2)
+    l12=line.new(time -1*dt , nivel_50_gap_baj, time, nivel_50_gap_baj, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=2)
+    l13=line.new(time -1*dt , nivel_1_gap_baj, time, nivel_1_gap_baj, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=1)
+    l14=line.new(time -1*dt , nivel_2_gap_baj, time, nivel_2_gap_baj, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=1)
+    l15=label.new(bar_index-1, nivel_0_gap_baj, style=label.style_none,text="0%" , size=size.normal, textcolor=color.black)
+    l16=label.new(bar_index-1, nivel_50_gap_baj, style=label.style_none,text="50%" , size=size.normal, textcolor=color.black)
+    l17=label.new(bar_index-1, nivel_100_gap_baj, style=label.style_none,text="100%" , size=size.normal, textcolor=color.black)
+    l18=label.new(bar_index-1, nivel_1_gap_baj, style=label.style_none,text=tostring(GB_PN1)+"%" , size=size.normal, textcolor=color.black)
+    l19=label.new(bar_index-1, nivel_2_gap_baj, style=label.style_none,text=tostring(GB_PN2)+"%" , size=size.normal, textcolor=color.black)
+    line.delete(l10[1])
+    line.delete(l11[1])
+    line.delete(l12[1])
+    line.delete(l13[1])
+    line.delete(l14[1])
+    label.delete(l15[1])
+    label.delete(l16[1])
+    label.delete(l17[1])
+    label.delete(l18[1])
+    label.delete(l19[1])
+
+
+
+    

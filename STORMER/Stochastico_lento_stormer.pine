@@ -1,0 +1,23 @@
+//@version=5
+indicator(title="Stochastic Pullback Strategy", shorttitle="Stochastic Pullback", format=format.price, precision=2, timeframe="", timeframe_gaps=true)
+
+// Stochastic Parameters
+stochK = input.int(defval=5, title="Stochastic K", minval=1)
+stochD = input.int(defval=3, title="Stochastic D", minval=1)
+stochSmooth = input.int(defval=3, title="Stochastic Smoothing", minval=1)
+overbought = input.int(80, minval=0, maxval=100, title="Overbought")
+oversold = input.int(20, minval=0, maxval=100, title="Oversold")
+
+// Calculate Slow Stochastic
+k= ta.sma(ta.stoch(close, high, low, stochK), stochSmooth)
+d = ta.sma(k, stochD)
+
+// Plot Stochastic
+plot(k, color=color.blue, linewidth=2, title="Slow %K")
+plot(d, color=color.orange, linewidth=2, title="Slow %D")
+
+// Oversold/Overbought Levels
+h0 = hline(overbought, color=color.red, linestyle=hline.style_dotted, title="Overbought")
+h2 = hline(50, color=color.black, linestyle=hline.style_dashed, title="50")
+h1 = hline(oversold, color=color.green, linestyle=hline.style_dotted, title="Oversold")
+fill(h0, h1, color=color.rgb(33, 150, 243, 90), title="Background")

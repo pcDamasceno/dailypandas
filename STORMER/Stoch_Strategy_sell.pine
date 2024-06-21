@@ -1,0 +1,57 @@
+//@version=5
+strategy(title="Stochastic Sell Pullback Strategy", shorttitle="Stochastic Pullback", overlay=true)
+
+// Stochastic Parameters
+stochK = input.int(defval=5, title="Stochastic K", minval=1)
+stochD = input.int(defval=3, title="Stochastic D", minval=1)
+stochSmooth = input.int(defval=3, title="Stochastic Smoothing", minval=1)
+RR = input.float(defval=2, title="Risco x Retorno", minval=1)
+startYear = input.int(defval=2021, title="Starting Year", minval=2020)
+numContratos = input.int(defval=5, title="Numero de contratos", minval=1)
+
+// Calculate Slow Stochastic
+k= ta.sma(ta.stoch(close, high, low, stochK), stochSmooth)
+d = ta.sma(k, stochD)
+
+// MARKERS FOR CONDITIONS
+var bool c1 = false
+var bool c2 = false
+var bool c3 = false
+
+// CONDITIONS 
+// Buy Condition 1: Stochastic below 20
+condition1 = k > 80
+//Check for pullback
+condition2 = k < 80
+//New bottom
+condition3 = k > 80
+
+condition_reset = k <= 50
+if condition_reset
+    c1 := false
+    c2 := false
+    c3 := false
+
+
+if condition1
+    c1 := true
+if c1    
+    if condition2
+        c2 := true
+if c2
+    if condition3
+        c3 := true
+    
+// Entry Signal: All conditions met, then wait for crossover
+buySignal = c1 and c2 and c3 and ta.crossunder(k, d) and year > startYear
+if buySignal
+    /// Define take profit level
+    lossPrice = math.max(high, high[1], high[2])
+    takeProfitValue = RR*(lossPrice-open)
+    strategy.entry(id="SS", direction=strategy.short, qty=numContratos, oca_name="OCA", oca_type=strategy.oca.cancel)
+    //strategy.exit("Parcial", "SS", qty=numContratos, profit=takeProfitValue, loss=lossPrice)
+    strategy.order("TP", strategy.long, limit=open-takeProfitValue, qty=numContratos, oca_name="OCA", oca_type=strategy.oca.cancel)
+    strategy.order("STOP", strategy.long, stop=lossPrice, qty=numContratos, oca_name="OCA", oca_type=strategy.oca.cancel)
+
+// Plot Buy Signal
+//plotshape(buySignal, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal)

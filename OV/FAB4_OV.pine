@@ -1,0 +1,67 @@
+//@version=5
+//
+// Autor= Pedro
+// Creditos: 
+// Evento/Estrategia: Oliver Velez, Academia iFT
+//
+// EL SIGUIENTE SCRIPT GRAFICA LA ZONA DE LOS 4 FANTASTICOS, UTILIZADA PARA LA APERTURA DE MERCADO DE ACCIONES.
+//
+indicator(shorttitle="FAB4", title="4 FANTASTICOS DE OLIVER VELEZ", overlay=true)
+//
+//
+// DADOS
+// ------------------------------------------------------------------------------------------------------------------
+
+VEZT=    input(true, title="VER ETIQUETA DE ZONA DE TRAVA")
+VECMT=   input(true, title="VER ETIQUETA TROCAR TEMPO...")
+MADCDDA= input.int(defval=30, title="MINUTOS ANTES DO FECHAMENTO DO DIA ANTERIOR=", minval=5, maxval=60)
+
+//
+// CALCULO
+// ------------------------------------------------------------------------------------------------------------------
+
+t1 = time(timeframe.period, "1822-1824")
+dt = time - time[1]
+
+ma20 = request.security(syminfo.tickerid,"2", ta.ema(close, 20))
+ma200 = request.security(syminfo.tickerid,"2", ta.ema(close, 200))
+precio_cierre = request.security(syminfo.tickerid,"2", close)
+precio_alto = request.security(syminfo.tickerid,"2", high)
+precio_bajo = request.security(syminfo.tickerid,"2", low)
+max_val= ta.highest(precio_alto, MADCDDA)
+min_val= ta.lowest(precio_bajo, MADCDDA)
+
+max_1=math.max(ma20,ma200)
+max_2=math.max(max_1,precio_cierre)
+max_3=math.max(max_2,precio_alto)
+max_4=math.max(max_3,precio_bajo)
+max_5=math.max(max_4,max_val)
+max_6=math.max(max_5,min_val)
+
+min_1=math.min(ma20,ma200)
+min_2=math.min(min_1,precio_cierre)
+min_3=math.min(min_2,precio_alto)
+min_4=math.min(min_3,precio_bajo)
+min_5=math.min(min_4,max_val)
+min_6=math.min(min_5,min_val)
+
+//
+// PLOT
+// ------------------------------------------------------------------------------------------------------------------
+
+plot(ma20, color=color.green)
+plot(ma200, color=color.blue)
+
+
+if timeframe.period !="2" and VECMT == true    
+    tf2=label.new(bar_index, low[1], style=label.style_none,text=" ⚠️⚠️ TROCAR PARA 2 MIN  ⚠️⚠️ ",size= size.huge, textcolor=color.red)
+    label.delete(tf2[1])
+
+if t1 > 0 and timeframe.period =="2" 
+    l=line.new(time -MADCDDA*dt , max_6, time + dt + dt , max_6, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=4)
+    l2=line.new(time -MADCDDA*dt , min_6, time + dt + dt , min_6, xloc.bar_time, extend=extend.right, style=line.style_solid, color=color.black, width=4)
+    line.delete(l[1])
+    line.delete(l2[1])    
+    if VEZT == true
+        l3=label.new(bar_index, (max_6+min_6)/2.001, style=label.style_none,text=" ☠️-ZONA DE TRAVA-☠️ ", size=size.huge, textcolor=color.red)
+        label.delete(l3[1])

@@ -1,0 +1,50 @@
+//@version=5
+strategy(title="Stochastic Sell Pullback Strategy", shorttitle="Stochastic Pullback", overlay=true)
+
+// Stochastic Parameters
+stochK = input.int(defval=5, title="Stochastic K", minval=1)
+stochD = input.int(defval=3, title="Stochastic D", minval=1)
+stochSmooth = input.int(defval=3, title="Stochastic Smoothing", minval=1)
+RR = input.float(defval=2, title="Risco x Retorno", minval=1)
+startYear = input.int(defval=2021, title="Start Year for Strategy", minval=2019)
+numContratos = input.int(defval=5, title="Numero de contratos", minval=1)
+
+// Calculate Slow Stochastic
+k= ta.sma(ta.stoch(close, high, low, stochK), stochSmooth)
+d = ta.sma(k, stochD)
+
+// MARKERS FOR CONDITIONS
+var bool c1 = false
+var bool c2 = false
+var bool c3 = false
+var bool inPosition = false
+
+// CONDITIONS 
+if k > 50
+    c1 := false
+    c2 := false
+    c3 := false
+
+
+if k < 20 and d < 20
+    c1 := true
+if c1    
+    if k > 20 and d > 20
+        c2 := true
+if c2
+    if k < 19
+        c3 := true
+    
+// Entry Signal: All conditions met, then wait for crossover
+buyCondition = c1 and c2 and c3 and ta.crossover(k, d) and year >= 2021
+if buyCondition
+    /// Define take profit level
+    stopPrice = math.min(low, low[1], low[2])
+    takeProfit = (close - stopPrice)*RR
+    strategy.entry(id="BSS", direction=strategy.long, qty=numContratos, oca_name="OCA", oca_type=strategy.oca.cancel)
+    strategy.order("STOP", strategy.short, stop=stopPrice, qty=numContratos, oca_name="OCA", oca_type=strategy.oca.cancel)
+    strategy.order("TP", strategy.short, limit=open+takeProfit, qty=numContratos, oca_name="OCA", oca_type=strategy.oca.cancel)
+
+
+// Plot Buy Signal
+//plotshape(buySignal, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal)

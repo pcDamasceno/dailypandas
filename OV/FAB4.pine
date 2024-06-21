@@ -1,0 +1,34 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © fuso25
+
+//@version=5
+indicator("FAB 4", overlay = true)
+
+i_ma20  = input.int(title="MA 20", defval=20, step=1,  group="Strategy Parameters", tooltip="20 EMA")
+i_ma200 = input.int(title="MA 200", defval=200, step=1,  group="Strategy Parameters", tooltip="200 EMA")
+
+ma20    = ta.ema(close, i_ma20)
+ma200   = ta.ema(close, i_ma200)
+
+//MUST BE ON FIRST BAR OF THE DAY
+isNewDay = timeframe.change("1D")
+
+//PRICE POSITION
+interestToBuy   = open > ma20 and ma20 > ma200 and (open - ma200) < 200
+interestToSell  = open < ma20 and ma20 < ma200 and (ma200 - open) > 200
+
+//ELEPHANT BAR
+// Define average true range (ATR) with a lookback period of 14
+atr = ta.atr(14)
+// Bullish engulfing bar with large true range
+is_bullish_elephant_bar = close > open + high - low * 1.5 and high - low > 2 * atr
+// Bearish engulfing bar with large true range
+is_bearish_elephant_bar = close < open - high + low * 1.5 and high - low > 2 * atr
+// Combine conditions based on your strategy
+is_elephant_bar = is_bullish_elephant_bar or is_bearish_elephant_bar
+
+plotshape(isNewDay and is_elephant_bar and interestToSell, title="FAB 4", style=shape.triangleup, size=size.small, location=location.belowbar)
+
+plot(ma20, color=color.green)
+plot(ma200, color=color.blue)
+

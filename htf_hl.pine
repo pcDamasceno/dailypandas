@@ -1,0 +1,38 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ZenAndTheArtOfTrading / PineScriptMastery
+// Last Updated: 1st February, 2022
+// @version=5
+
+//This simple script draws the previous higher timeframe candle high/low to your chart.
+//You can also make the script paint the zone between the low/open and the high/close
+
+
+indicator("HTF High/Low", overlay=true)
+
+// Get input
+res     = input.timeframe(title="Timeframe", defval="D")
+paint   = input.bool(title="Paint Wick Zone?", defval=false)
+
+// Create non-repainting security function
+rp_security(_symbol, _res, _src) => request.security(_symbol, _res, _src[barstate.isconfirmed ? 0 : 1])
+
+// Get HTF price data
+htfHigh = rp_security(syminfo.tickerid, res, high)
+htfLow = rp_security(syminfo.tickerid, res, low)
+htfOpen = rp_security(syminfo.tickerid, res, open)
+htfClose = rp_security(syminfo.tickerid, res, close)
+
+// Plot data to chart
+r1 = plot(htfHigh, color=color.red, title="HTF High")
+s1 = plot(htfLow, color=color.blue, title="HTF Low")
+
+// Fill wick zone
+r2 = plot(paint ? htfOpen > htfClose ? htfOpen : htfClose : na, color=na)
+s2 = plot(paint ? htfOpen < htfClose ? htfOpen : htfClose : na, color=na)
+fill(r1, r2, color=color.new(color.red, 50), title="HTF High Zone")
+fill(s1, s2, color=color.new(color.blue, 50), title="HTF Low Zone")
+
+// Trigger alerts
+longAlert = close > htfHigh
+shortAlert = close < htfLow
+alertcondition(longAlert or shortAlert, title="HTF Breakout Alert", message="Breakout alert for {{ticker}}")
