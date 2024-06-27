@@ -168,7 +168,7 @@ if buyCondition and math.abs(shortStop - math.min(low, low[1], low[2], low[3], l
     mao = i_maoFixa ? i_maoSize: math.floor(strategy.equity/1000)
     buyStartHand := mao
     //deixa ordem pendurada no ShortStop
-    strategy.order(id="CE_B", oca_name="OCA2", direction=strategy.long, stop=shortStop, qty=mao, comment="Entrada C", alert_message="Entrada C")
+    strategy.order(id="CE_B", direction=strategy.long, stop=shortStop, qty=mao, comment="Entrada C", alert_message="Entrada C")
     
 var float initalStop = na
 if posSize > 0 and buyCondition[1]
