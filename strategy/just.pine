@@ -1,0 +1,170 @@
+//@version=5
+strategy("Just Method", 
+     overlay=true, 
+     initial_capital=2000)
+
+import TradingView/Strategy/3 as tvS
+import jmosullivan/SessionVolumeProfile/2
+
+// Inputs
+grp1 = "Volume Profile"
+vpNumRows = input.int(group=grp1, defval=24, title="Number of Rows", tooltip="The number of rows to divide the value area into.")
+vpValueAreaCoverage = input.int(group=grp1, defval=70, title="Value Area Volume", minval=1, maxval=100, step=1, tooltip="The % of session volume that encompasses the value area.")
+
+i_startTime = input.int(defval=9, title="Start Trading at: (0-23)", minval=0, maxval=24, group="Time Range")
+i_stopTime = input.int(defval=15, title="Stop Trading at: (0-23)", minval=0, maxval=24, group="Time Range")
+
+i_stopLoss = input.float(defval=3, title="Stop-Loss in points", tooltip="The stop-loss amount as poits.", group="Risk Management")
+i_riskReward = input.float(defval=1, title="Risk Reward Per Operation", group="Risk Management")
+i_contractSize = input.int(defval=5, title="Number of contracts per op", minval=1, step=1, group="Risk Management")
+i_contractMultiplier = input.float(defval=1, title="Increase contract size on second chance by: ", minval=0.1, step=0.1, group="Risk Management")
+
+// VARIABLES
+posSize = math.abs(strategy.position_size)
+f_firstBar = session.isfirstbar_regular and session.ismarket ? true : false
+f_hour = hour >= i_startTime and hour < i_stopTime
+
+// Indicator Logic
+// Configure today's SVP
+var todaySVP = SessionVolumeProfile.Object.new(vpNumRows, vpValueAreaCoverage)
+// Create a null var to hold yesterday's SVP
+var SessionVolumeProfile.Object yesterdaySVP = na
+// Fetch bars from the lower timeframe for analysis
+[ltfHigh, ltfLow, ltfVolume] = request.security_lower_tf(syminfo.tickerid, SessionVolumeProfile.getLowerTimeframe(), [high, low, volume])
+// Pass the request variables to the library, along with today's configured SVP object
+SessionVolumeProfile.get(todaySVP, ltfHigh, ltfLow, ltfVolume)
+// When a new day begins, copy today's volume profile over yesterday's
+
+var float yClose = na
+if f_firstBar
+    yesterdaySVP := todaySVP.copy()
+    yClose := close[1]
+// Now I have yesterday's SVP information, so I have access to the three values I'm looking for:
+// yesterdaySVP.valueAreaHigh
+// yesterdaySVP.pointOfControl
+// yesterdaySVP.valueAreaLow
+
+// If yesterdaySVP is not null
+yPOC_1p_up = yesterdaySVP.pointOfControl * 1.01
+yPOC_1p_down = yesterdaySVP.pointOfControl * 0.99
+
+// Get previous day's closing price from the daily timeframe
+//yClose = request.security(syminfo.tickerid, "D", close[1])
+
+// Calculate 1% difference levels
+yClose_1p_up = yClose * 1.01
+yClose_2p_up = yClose * 1.02
+yClose_1p_down = yClose * 0.99
+yClose_2p_down = yClose * 0.98
+
+// Strategy Logic
+// Initialize variables to track if an order has been executed
+var bool yPOC_1p_down_executed = false
+var bool yClose_1p_down_executed = false
+var bool yClose_2p_down_executed = false
+var bool yPOC_1p_up_executed = false
+var bool yClose_1p_up_executed = false
+var bool yClose_2p_up_executed = false
+
+
+// Reset execution flags at the beginning of a new day
+if f_firstBar
+    yPOC_1p_down_executed := false
+    yClose_1p_down_executed := false
+    yClose_2p_down_executed := false
+    yPOC_1p_up_executed := false
+    yClose_1p_up_executed := false
+    yClose_2p_up_executed := false
+
+if session.islastbar_regular
+    strategy.cancel_all()
+
+
+tvS.closeAtEndOfSession("yPOC_1p_up", comment="EoS")
+tvS.closeAtEndOfSession("yPOC_1p_down", comment="EoS")
+tvS.closeAtEndOfSession("yClose_1p_up", comment="EoS")
+tvS.closeAtEndOfSession("yClose_1p_down", comment="EoS")
+tvS.closeAtEndOfSession("yClose_2p_up", comment="EoS")
+tvS.closeAtEndOfSession("yClose_2p_down", comment="EoS")
+
+
+//@function Displays text passed to `txt` and a horizontal line at `price` when called.
+debugLabel(price, txt) =>
+    label.new(
+         bar_index, price, text = txt, color = color.teal, textcolor = color.white, 
+         style = label.style_label_lower_right, size = size.large
+     )
+    line.new(
+         bar_index, price, bar_index + 1, price, color = color.teal, extend = extend.right, 
+         style = line.style_dashed
+     )
+
+
+// POC ORDERS
+//if (not yPOC_1p_down_executed) and (not f_firstBar) and f_hour
+//    strategy.order("yPOC_1p_down", strategy.long, limit=yPOC_1p_down, stop=yPOC_1p_down - i_stopLoss)
+//    strategy.exit(id="yPOC_1p_down_TP", from_entry="yPOC_1p_down", comment="TP POC D", stop=strategy.position_avg_price + 5, qty_percent=100, alert_profit="TP") 
+//    yPOC_1p_down_executed := true
+
+// Short Entry Orders
+//if (not yPOC_1p_up_executed) and (not f_firstBar) and f_hour
+//    strategy.order("yPOC_1p_up", strategy.short, limit=yPOC_1p_up, stop=yPOC_1p_up + i_stopLoss)
+//    strategy.exit(id="yPOC_1p_up_TP", from_entry="yPOC_1p_up", comment="TP POC UP", limit=strategy.position_avg_price - 5, qty_percent=100, alert_profit="TP")      
+//    yPOC_1p_up_executed := true
+
+// CLOSING PROCE ORDERS
+///////////////////////////////// 1% /////////////////////////////////
+// BUY 1%
+if (not yClose_1p_down_executed) and (not f_firstBar) and f_hour
+    strategy.order("yClose_1p_down", strategy.long, qty=i_contractSize, limit=yClose_1p_down, oca_name="OCA1Buy")
+    strategy.order("yClose_1p_down_LOSS", strategy.short, qty=i_contractSize, stop=(yClose_1p_down - i_stopLoss), oca_name="OCA1Buy")
+    yClose_1p_down_executed := true
+if posSize > 0 and yClose_1p_down_executed
+    strategy.exit(id="yClose_1p_down_TP", from_entry="yClose_1p_down", comment="TP CLOSE D", limit=(strategy.position_avg_price + (i_riskReward*i_stopLoss)), qty_percent=100, alert_profit="TP", oca_name="OCA1Buy")
+if posSize == 0 and yClose_1p_down_executed
+    strategy.cancel(id="yClose_1p_down_LOSS")     
+     
+
+// Sell 1%
+if (not yClose_1p_up_executed) and (not f_firstBar) and f_hour
+    strategy.order("yClose_1p_up", strategy.short, qty=i_contractSize, limit=yClose_1p_up, stop=(yClose_1p_up + i_stopLoss), oca_name="OCA1Sell")
+    strategy.order("yClose_1p_up_LOSS", strategy.long, qty=i_contractSize, stop=(yClose_1p_up + i_stopLoss), oca_name="OCA1Sell")
+    yClose_1p_up_executed := true
+if posSize > 0 and yClose_1p_up_executed
+    strategy.exit(id="yClose_1p_up_TP", from_entry="yClose_1p_up", comment="TP CLOSE UP", limit=(strategy.position_avg_price - (i_riskReward*i_stopLoss)), qty_percent=100, alert_profit="TP", oca_name="OCA1Sell")
+if posSize == 0 and yClose_1p_up_executed    
+    strategy.cancel(id="yClose_1p_up_LOSS")     
+
+///////////////////////////////// 2% /////////////////////////////////
+// BUY 2%
+if (not yClose_2p_down_executed) and (not f_firstBar) and f_hour
+    strategy.order("yClose_2p_down", strategy.long, qty=i_contractSize*i_contractMultiplier, limit=yClose_2p_down, stop=(yClose_2p_down + i_stopLoss), oca_name="OCA2Buy")
+    strategy.order("yClose_2p_down_LOSS", strategy.short, qty=i_contractSize*i_contractMultiplier, stop=(yClose_2p_down + i_stopLoss), oca_name="OCA2Buy")
+    yClose_2p_down_executed := true
+
+if posSize > 0 and yClose_2p_down_executed
+    strategy.exit(id="yClose_2p_down_TP", from_entry="yClose_2p_down", comment="TP CLOSE UP", limit=(strategy.position_avg_price - (i_riskReward*i_stopLoss)), qty_percent=100, alert_profit="TP", oca_name="OCA2Buy")
+if posSize == 0 and yClose_2p_down_executed
+    strategy.cancel(id="yClose_2p_down_LOSS")  
+
+// SELL 2%
+if (not yClose_2p_up_executed) and (not f_firstBar) and f_hour
+    strategy.order("yClose_2p_up", strategy.long, qty=i_contractSize*i_contractMultiplier, limit=yClose_2p_up, stop=(yClose_2p_up + i_stopLoss), oca_name="OCA2Sell")
+    strategy.order("yClose_2p_up_LOSS", strategy.short, qty=i_contractSize*i_contractMultiplier, stop=(yClose_2p_up + i_stopLoss), oca_name="OCA2Sell")
+    yClose_2p_up_executed := true
+
+if posSize > 0 and yClose_2p_up_executed
+    strategy.exit(id="yClose_2p_up_TP", from_entry="yClose_2p_up", comment="TP CLOSE UP", limit=(strategy.position_avg_price - (i_riskReward*i_stopLoss)), qty_percent=100, alert_profit="TP", oca_name="OCA2Sell")
+if posSize == 0 and yClose_2p_up_executed
+    strategy.cancel(id="yClose_2p_up_LOSS")  
+
+// Plotting the lines
+barcolor(f_firstBar ? color.black : na)
+
+plot(yClose_1p_up, color=color.blue, title="Previous Close 1% Above", linewidth=1, style=plot.style_line)
+plot(yClose_1p_down, color=color.blue, title="Previous Close 1% Below", linewidth=1, style=plot.style_line)
+plot(yClose_2p_up, color=color.purple, title="Previous Close 2% Above", linewidth=1, style=plot.style_linebr)
+plot(yClose_2p_down, color=color.purple, title="Previous Close 2% Below", linewidth=1, style=plot.style_linebr)
+
+//plot(yPOC_1p_up, color=color.red, title="High Volume Profile 1% Above", linewidth=1, style=plot.style_line)
+//plot(yPOC_1p_down, color=color.red, title="High Volume Profile 1% Below", linewidth=1, style=plot.style_line)
