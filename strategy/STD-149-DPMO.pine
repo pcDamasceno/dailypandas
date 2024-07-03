@@ -1,7 +1,4 @@
-//Forget Everything You Think You Know About Scalping Trading Strategy
-//https://www.youtube.com/watch?v=dYvmLnnoF90
-
-//######################## STDFNPGF ########################
+//######################## Std-149-dpmo ########################
 //@version=5
 strategy("Std-149-dpmo [DailyPanda]",
      shorttitle="Std-149-dpmo",
@@ -10,19 +7,39 @@ strategy("Std-149-dpmo [DailyPanda]",
      currency=currency.USD)
 
 
-import loxx/loxxexpandedsourcetypes/4
+import loxx/loxxexpandedsourcetypes/4 as loxx
 import TradingView/Strategy/3 as tvS
 
-//Inputs
+//---------------------------------------------------------------------------------------------------------------------}
+// INPUTS
+//---------------------------------------------------------------------------------------------------------------------{
+
 i_riskReward = input.float(defval=1, title="Risk Reward Per Operation", step=0.1, group="Risk Management")
 i_plotexits = input.bool(title="Plot TP and SL", defval=true)
 i_lookbackPeriod = input.int(defval=15, title="Lookback Period For Swing High and Low (STOP-LOSS)", step=1)
 i_startTime = input.int(defval=0, title="Start Trading at: (H)", minval=0)
 i_stopTime = input.int(defval=24, title="Stop Trading at: (H)", minval=0, maxval=24, step=1)
+i_dpmoShow = input.bool(true, 'Show DPMO', group="DPMO")
 
 
 greencolor = #2DD204  
 redcolor = #D2042D 
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Functions / Methods
+//---------------------------------------------------------------------------------------------------------------------{
+
+//swing high/low
+f_swingPoint(_lookback, _high_low) =>
+    var float swingPoint = na
+    for i = 2 to _lookback // start from 2 to avoid negative indexing
+        if _high_low == 'high'
+            if high[i] > high[i-1] and high[i] > high[i-2] and high[i] > high[i+1] and high[i] > high[i+2]
+                swingPoint := high[i]
+        else
+            if low[i] < low[i-1] and low[i] < low[i-2] and low[i] < low[i+1] and low[i] < low[i+2]
+                swingPoint := low[i]
+    swingPoint
 
 //factorial calc
 fact(int n)=>
@@ -78,8 +95,7 @@ ksl=0.0645 //Kaufman's Adaptive MA (KAMA) Only - Slow End"
 amafl = 2 //Adaptive Moving Average (AMA) Only - Fast"
 amasl = 30 //Adaptive Moving Average (AMA) Only - Slow"
 
-
-float src = loxxexpandedsourcetypes.rclose()
+float src = loxx.rclose()
 	
 out = _npolegf(src, period, order)
 out := _filt(out, filterperiod, filter)
@@ -112,12 +128,15 @@ plotshape(goLong, title = "Long", color = color.green, textcolor = color.green, 
 plotshape(goShort, title = "Short", color = color.fuchsia, textcolor = color.fuchsia, text = "S", style = shape.triangledown, location = location.abovebar, size = size.tiny)
 
 
-//######################## SMARTSCAR ########################
+// ######################## 
+// SMARTSCAR 
+// ########################
 sma_control = input(title='SMA for visual control', defval=145)
 plot(ta.sma(close, sma_control), color=color.new(color.purple, 0))
 
-//######################## DPMO ########################
-//@version=5
+// ######################## 
+// DPMO 
+// ########################
 length1 = 35 //First Smoothing
 length2 = 20 //Second Smoothing
 siglength = 10 //Signal Smoothing
@@ -134,18 +153,6 @@ pmol = calc_csf(10 * pmol2, length2)
 pmols = ta.ema(pmol, siglength)
 d = pmol - pmols
 
-//######################## SWING LOW ########################
-// Function to find the last swing high or low
-f_swingPoint(_lookback, _high_low) =>
-    var float swingPoint = na
-    for i = 2 to _lookback // start from 2 to avoid negative indexing
-        if _high_low == 'high'
-            if high[i] > high[i-1] and high[i] > high[i-2] and high[i] > high[i+1] and high[i] > high[i+2]
-                swingPoint := high[i]
-        else
-            if low[i] < low[i-1] and low[i] < low[i-2] and low[i] < low[i+1] and low[i] < low[i+2]
-                swingPoint := low[i]
-    swingPoint
 
 // Get the last swing low within the lookback period
 lastSwingLow = f_swingPoint(i_lookbackPeriod, 'low')
@@ -159,7 +166,9 @@ plot(posSize > 0 and i_plotexits ? stopLoss: na, color=color.red, style=plot.sty
 plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot.style_cross, linewidth=2, title="TP")
 
 
-//######################## ORDERS ########################
+//######################## 
+// ORDERS
+// ########################
 //LONG
 if goLong and close > sma_control and d > 0
     stopLossDistance = close - lastSwingLow
