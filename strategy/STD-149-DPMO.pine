@@ -4,7 +4,8 @@ strategy("Std-149-dpmo [DailyPanda]",
      shorttitle="Std-149-dpmo",
      overlay = true,
      initial_capital=4000,
-     currency=currency.USD)
+     currency=currency.USD
+     )
 
 
 import loxx/loxxexpandedsourcetypes/4 as loxx
@@ -14,12 +15,28 @@ import TradingView/Strategy/3 as tvS
 // INPUTS
 //---------------------------------------------------------------------------------------------------------------------{
 
-i_riskReward = input.float(defval=1, title="Risk Reward Per Operation", step=0.1, group="Risk Management")
-i_plotexits = input.bool(title="Plot TP and SL", defval=true)
-i_lookbackPeriod = input.int(defval=15, title="Lookback Period For Swing High and Low (STOP-LOSS)", step=1)
-i_startTime = input.int(defval=0, title="Start Trading at: (H)", minval=0)
-i_stopTime = input.int(defval=24, title="Stop Trading at: (H)", minval=0, maxval=24, step=1)
-i_dpmoShow = input.bool(true, 'Show DPMO', group="DPMO")
+i_riskReward = input.float(defval=1.6, title="Risk Reward Per Operation", step=0.1, group="Risk Management")
+i_plotexits = input.bool(title="Plot TP and SL", defval=true, group="Risk Management")
+i_lookbackPeriod = input.int(defval=20, title="Number of bars back for Swing High and Low (STOPLOSS)", step=1, group="Risk Management")
+i_startTime = input.int(defval=0, title="Start Trading at: (H)", minval=0, group="Trading Time")
+i_stopTime = input.int(defval=24, title="Stop Trading at: (H)", minval=0, maxval=24, step=1, group="Trading Time")
+
+i_meta = input.bool(title="Stop at Day Goal", defval=true, group="Risk Management")
+i_metaPct = input.int(defval=5, title="Day % Goal", minval=1, step=1, group="Risk Management")
+i_lossPct = input.int(defval=5, title="% max Day DD", minval=1, maxval=100, step=1, group="Risk Management")
+i_contractSize = input.float(defval=0.3, title="Number of contracts per op", minval=0.01, step=0.05, group="Risk Management")
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// RISK MANAGEMENT
+//---------------------------------------------------------------------------------------------------------------------{
+
+strategy.risk.max_intraday_loss(i_lossPct, strategy.percent_of_equity)
+// Store equity value from the beginning of the day
+eqFromDayStart = ta.valuewhen(ta.change(dayofweek) > 0, strategy.equity, 0)
+// Calculate change of the current equity from the beginning of the current day.
+eqChgPct = 100 * ((strategy.equity - eqFromDayStart - strategy.openprofit) / (strategy.equity-strategy.openprofit))
+f_stopGain = eqChgPct >= i_metaPct and i_meta ? true : false
 
 
 greencolor = #2DD204  
@@ -129,9 +146,9 @@ plotshape(goShort, title = "Short", color = color.fuchsia, textcolor = color.fuc
 
 
 // ######################## 
-// SMARTSCAR 
+// SMA CONTROL
 // ########################
-sma_control = input(title='SMA for visual control', defval=145)
+sma_control = input(title='SMA for visual control', defval=149)
 plot(ta.sma(close, sma_control), color=color.new(color.purple, 0))
 
 // ######################## 
@@ -153,6 +170,11 @@ pmol = calc_csf(10 * pmol2, length2)
 pmols = ta.ema(pmol, siglength)
 d = pmol - pmols
 
+//---------------------------------------------------------------------------------------------------------------------}
+// STRATEGY
+//---------------------------------------------------------------------------------------------------------------------{
+
+f_dateFilter = hour >= i_startTime and hour < i_stopTime
 
 // Get the last swing low within the lookback period
 lastSwingLow = f_swingPoint(i_lookbackPeriod, 'low')
@@ -166,36 +188,36 @@ plot(posSize > 0 and i_plotexits ? stopLoss: na, color=color.red, style=plot.sty
 plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot.style_cross, linewidth=2, title="TP")
 
 
-//######################## 
-// ORDERS
-// ########################
 //LONG
-if goLong and close > sma_control and d > 0
+if goLong and close > sma_control and d > 0 and posSize == 0 and f_dateFilter and not f_stopGain
     stopLossDistance = close - lastSwingLow
     takeProfitDistance = stopLossDistance * i_riskReward
 
     stopLoss := lastSwingLow
     takeProfit := close + takeProfitDistance
-    strategy.entry(id="S-Long", direction=strategy.long, comment="Entry Long")
-    strategy.exit("Exit L", "S-Long", stop=lastSwingLow, limit=close + takeProfitDistance)
+
+    strategy.entry(id="S-Long", direction=strategy.long, qty=i_contractSize, comment="Entry Long")
+    strategy.exit("Exit L", "S-Long", qty=i_contractSize, stop=lastSwingLow, limit=close + takeProfitDistance)
 
 //SHORT
-if goShort and close < sma_control and d < 0
+if goShort and close < sma_control and d < 0 and posSize == 0 and f_dateFilter and not f_stopGain
     stopLossDistance = math.abs(close - lastSwingHigh)
     takeProfitDistance = stopLossDistance * i_riskReward
 
     stopLoss := lastSwingHigh
     takeProfit := close - takeProfitDistance
-
-    strategy.entry(id="S-Short", direction=strategy.short, comment="Entry Short")
-    strategy.exit("Exit S", from_entry="S-Short", stop=lastSwingHigh, limit=close - takeProfitDistance)
+    
+    strategy.entry(id="S-Short", direction=strategy.short, qty=i_contractSize, comment="Entry Short")
+    strategy.exit("Exit S", from_entry="S-Short", qty=i_contractSize, stop=lastSwingHigh, limit=close - takeProfitDistance)
 
     
 tvS.closeAtEndOfSession("S-Short", comment="EoS Sell")
 tvS.closeAtEndOfSession("S-Long", comment="EoS Long")
 
-///////////////////
-// MONTHLY TABLE //
+
+//---------------------------------------------------------------------------------------------------------------------}
+// MONTHLY TABLE
+//---------------------------------------------------------------------------------------------------------------------{
 
 new_month = month(time) != month(time[1])
 new_year = year(time) != year(time[1])
@@ -244,7 +266,7 @@ last_computed := barstate.islastconfirmedhistory ? true : nz(last_computed[1])
 var monthly_table = table(na)
 
 if barstate.islastconfirmedhistory
-    monthly_table := table.new(position.bottom_right, columns=14, rows=array.size(year_pnl) + 1, border_width=1)
+    monthly_table := table.new(position.top_right, columns=14, rows=array.size(year_pnl) + 1, border_width=1)
 
     table.cell(monthly_table, 0, 0, '', bgcolor=#cccccc)
     table.cell(monthly_table, 1, 0, 'Jan', bgcolor=#cccccc)
@@ -266,12 +288,12 @@ if barstate.islastconfirmedhistory
         table.cell(monthly_table, 0, yi + 1, str.tostring(year(array.get(year_time, yi))), bgcolor=#cccccc)
 
         y_color = array.get(year_pnl, yi) > 0 ? color.new(color.green, transp=50) : color.new(color.red, transp=50)
-        table.cell(monthly_table, 13, yi + 1, str.tostring(math.round(array.get(year_pnl, yi) * 100, 2)), bgcolor=y_color)
+        table.cell(monthly_table, 13, yi + 1, str.tostring(math.round(array.get(year_pnl, yi) * 100, 2)) +'%', bgcolor=y_color)
 
     for mi = 0 to array.size(month_time) - 1 by 1
         m_row = year(array.get(month_time, mi)) - year(array.get(year_time, 0)) + 1
         m_col = month(array.get(month_time, mi))
         m_color = array.get(month_pnl, mi) > 0 ? color.new(color.green, transp=70) : color.new(color.red, transp=70)
 
-        table.cell(monthly_table, m_col, m_row, str.tostring(math.round(array.get(month_pnl, mi) * 100, 2)), bgcolor=m_color)
+        table.cell(monthly_table, m_col, m_row, str.tostring(math.round(array.get(month_pnl, mi) * 100, 2)) +'%', bgcolor=m_color)
 
