@@ -3,7 +3,7 @@
 strategy("Std-149-dpmo [DailyPanda]",
      shorttitle="Std-149-dpmo",
      overlay = true,
-     initial_capital=4000,
+     initial_capital=2000,
      currency=currency.USD
      )
 
@@ -24,7 +24,10 @@ i_stopTime = input.int(defval=24, title="Stop Trading at: (H)", minval=0, maxval
 i_meta = input.bool(title="Stop at Day Goal", defval=true, group="Risk Management")
 i_metaPct = input.int(defval=5, title="Day % Goal", minval=1, step=1, group="Risk Management")
 i_lossPct = input.int(defval=5, title="% max Day DD", minval=1, maxval=100, step=1, group="Risk Management")
-i_contractSize = input.float(defval=0.3, title="Number of contracts per op", minval=0.01, step=0.05, group="Risk Management")
+i_contractSize = input.float(defval=0.15, title="Number of contracts per op", minval=0.01, step=0.05, group="Risk Management")
+
+i_useSMA = input.bool(title="Filter Operations by SMA", defval=true, group="Moving Average")
+i_sma149 = input(title='SMA Period', defval=149, group="Moving Average")
 
 
 //---------------------------------------------------------------------------------------------------------------------}
@@ -100,17 +103,16 @@ _filt(float src, int len, float filter)=>
     price := math.abs(price - nz(price[1])) < filtdev ? nz(price[1]) : price
     price
     
-period = input.int(50,'Period', group = "Basic Settings")
-order = input.int(10,'Order', group = "Basic Settings", minval = 1)
-
+period = 50 //'Period'
+order = 10 //'Order'
 filter = 1 //"Filter Devaitions"
-filterperiod = input.int(49, "Filter Period", minval = 0, group= "Filter Settings")
+filterperiod = 49 //"Filter Period"
 
 
 kfl=0.666 //Kaufman's Adaptive MA (KAMA) Only - Fast End
-ksl=0.0645 //Kaufman's Adaptive MA (KAMA) Only - Slow End"
-amafl = 2 //Adaptive Moving Average (AMA) Only - Fast"
-amasl = 30 //Adaptive Moving Average (AMA) Only - Slow"
+ksl=0.0645 //Kaufman's Adaptive MA (KAMA) Only - Slow End
+amafl = 2 //Adaptive Moving Average (AMA) Only - Fast
+amasl = 30 //Adaptive Moving Average (AMA) Only - Slow
 
 float src = loxx.rclose()
 	
@@ -141,15 +143,12 @@ colorout := state == -1 ? redcolor : state == 1 ? greencolor : nz(colorout[1])
 plot(out, "N-Pole GF", color = colorout, linewidth = 3)
 barcolor(colorout)
 
-plotshape(goLong, title = "Long", color = color.green, textcolor = color.green, text = "L", style = shape.triangleup, location = location.belowbar, size = size.tiny)
-plotshape(goShort, title = "Short", color = color.fuchsia, textcolor = color.fuchsia, text = "S", style = shape.triangledown, location = location.abovebar, size = size.tiny)
-
 
 // ######################## 
 // SMA CONTROL
 // ########################
-sma_control = input(title='SMA for visual control', defval=149)
-plot(ta.sma(close, sma_control), color=color.new(color.purple, 0))
+sma149 = ta.sma(close, i_sma149)
+plot(sma149, color=color.new(color.purple, 0))
 
 // ######################## 
 // DPMO 
@@ -175,6 +174,8 @@ d = pmol - pmols
 //---------------------------------------------------------------------------------------------------------------------{
 
 f_dateFilter = hour >= i_startTime and hour < i_stopTime
+f_smaLong = i_useSMA ? close > sma149 : true
+f_smaShort = i_useSMA ? close < sma149 : true
 
 // Get the last swing low within the lookback period
 lastSwingLow = f_swingPoint(i_lookbackPeriod, 'low')
@@ -189,7 +190,7 @@ plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot
 
 
 //LONG
-if goLong and close > sma_control and d > 0 and posSize == 0 and f_dateFilter and not f_stopGain
+if goLong and f_smaLong and d > 0 and posSize == 0 and f_dateFilter and not f_stopGain
     stopLossDistance = close - lastSwingLow
     takeProfitDistance = stopLossDistance * i_riskReward
 
@@ -200,7 +201,7 @@ if goLong and close > sma_control and d > 0 and posSize == 0 and f_dateFilter an
     strategy.exit("Exit L", "S-Long", qty=i_contractSize, stop=lastSwingLow, limit=close + takeProfitDistance)
 
 //SHORT
-if goShort and close < sma_control and d < 0 and posSize == 0 and f_dateFilter and not f_stopGain
+if goShort and f_smaShort and d < 0 and posSize == 0 and f_dateFilter and not f_stopGain
     stopLossDistance = math.abs(close - lastSwingHigh)
     takeProfitDistance = stopLossDistance * i_riskReward
 
