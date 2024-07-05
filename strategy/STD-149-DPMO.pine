@@ -4,7 +4,10 @@ strategy("Std-149-dpmo [DailyPanda]",
      shorttitle="Std-149-dpmo",
      overlay = true,
      initial_capital=2000,
-     currency=currency.USD
+     currency=currency.USD,
+     commission_type=strategy.commission.percent,
+     commission_value=0.024,
+     slippage=5
      )
 
 
@@ -29,6 +32,8 @@ i_contractSize = input.float(defval=0.15, title="Number of contracts per op", mi
 i_useSMA = input.bool(title="Filter Operations by SMA", defval=true, group="Moving Average")
 i_sma149 = input(title='SMA Period', defval=149, group="Moving Average")
 
+i_plotOsc = input.bool(title="Plot Oscilator", defval=false, group="Oscilator")
+
 
 //---------------------------------------------------------------------------------------------------------------------}
 // RISK MANAGEMENT
@@ -37,9 +42,15 @@ i_sma149 = input(title='SMA Period', defval=149, group="Moving Average")
 strategy.risk.max_intraday_loss(i_lossPct, strategy.percent_of_equity)
 // Store equity value from the beginning of the day
 eqFromDayStart = ta.valuewhen(ta.change(dayofweek) > 0, strategy.equity, 0)
+openvalueDay = ta.valuewhen(ta.change(dayofweek) > 0, open, 0)
+f_firstBar = session.isfirstbar_regular and session.ismarket ? true : false
+f_lastBar = session.islastbar_regular ? true : false
+
 // Calculate change of the current equity from the beginning of the current day.
 eqChgPct = 100 * ((strategy.equity - eqFromDayStart - strategy.openprofit) / (strategy.equity-strategy.openprofit))
 f_stopGain = eqChgPct >= i_metaPct and i_meta ? true : false
+
+var float commisionPaid = 0
 
 
 greencolor = #2DD204  
@@ -167,7 +178,15 @@ i = close / nz(close[1], close) * 100
 pmol2 = calc_csf(i - 100, length1)
 pmol = calc_csf(10 * pmol2, length2)
 pmols = ta.ema(pmol, siglength)
-d = pmol - pmols
+d = (pmol - pmols)
+scaling_factor = 0.1
+scaled_d = openvalueDay + d * scaling_factor * openvalueDay
+
+// Plot the scaled oscillator
+plot(i_plotOsc ? scaled_d : na, color=color.gray, style=plot.style_line, linewidth=1, title="Scaled Oscillator")
+plot(i_plotOsc ? openvalueDay : na, color=color.gray, linewidth=1, title="Scaled Oscillator")
+
+//plot(openvalueDay + d, "BeginDay", color=color.lime, linewidth = 2)
 
 //---------------------------------------------------------------------------------------------------------------------}
 // STRATEGY
@@ -185,9 +204,11 @@ lastSwingHigh = f_swingPoint(i_lookbackPeriod, 'high')
 var float stopLoss = na
 var float takeProfit = na
 posSize = math.abs(strategy.position_size)
-plot(posSize > 0 and i_plotexits ? stopLoss: na, color=color.red, style=plot.style_cross, linewidth=2, title="Last Swing")
-plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot.style_cross, linewidth=2, title="TP")
+plot(posSize > 0 and i_plotexits ? stopLoss: na, color=color.red, style=plot.style_linebr, linewidth=2, title="Last Swing")
+plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot.style_linebr, linewidth=2, title="TP")
 
+if strategy.closedtrades[1] != strategy.closedtrades
+    commisionPaid := commisionPaid + strategy.closedtrades.commission(strategy.closedtrades-1)
 
 //LONG
 if goLong and f_smaLong and d > 0 and posSize == 0 and f_dateFilter and not f_stopGain
@@ -267,7 +288,7 @@ last_computed := barstate.islastconfirmedhistory ? true : nz(last_computed[1])
 var monthly_table = table(na)
 
 if barstate.islastconfirmedhistory
-    monthly_table := table.new(position.top_right, columns=14, rows=array.size(year_pnl) + 1, border_width=1)
+    monthly_table := table.new(position.bottom_left, columns=15, rows=array.size(year_pnl) + 3, border_width=1)
 
     table.cell(monthly_table, 0, 0, '', bgcolor=#cccccc)
     table.cell(monthly_table, 1, 0, 'Jan', bgcolor=#cccccc)
@@ -283,6 +304,8 @@ if barstate.islastconfirmedhistory
     table.cell(monthly_table, 11, 0, 'Nov', bgcolor=#cccccc)
     table.cell(monthly_table, 12, 0, 'Dec', bgcolor=#cccccc)
     table.cell(monthly_table, 13, 0, 'Year', bgcolor=#999999)
+    table.cell(monthly_table, 14, 0, 'Add Info', bgcolor=#999999)
+    
 
 
     for yi = 0 to array.size(year_pnl) - 1 by 1
@@ -298,3 +321,7 @@ if barstate.islastconfirmedhistory
 
         table.cell(monthly_table, m_col, m_row, str.tostring(math.round(array.get(month_pnl, mi) * 100, 2)) +'%', bgcolor=m_color)
 
+    table.cell(monthly_table, 14,1, "N. of Trades: " + str.tostring(strategy.closedtrades),text_color=color.white, bgcolor=#999999)
+    table.cell(monthly_table, 14,2, "Commission($): " + str.tostring(math.round(commisionPaid,2)),text_color=color.white, bgcolor=#999999)
+    table.cell(monthly_table, 14,3, "Comission /Profit: " + str.tostring(math.round(commisionPaid*100/strategy.netprofit,2)) + "%",text_color=color.white, bgcolor=#999999)
+    
