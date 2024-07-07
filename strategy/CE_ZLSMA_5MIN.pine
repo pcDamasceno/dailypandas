@@ -19,7 +19,7 @@ i_lossPct = input.int(defval=10, title="% max Day DD", minval=1, maxval=100, ste
 i_meta = input.bool(title="Stop at Day Goal", defval=false, group="Risk Management")
 i_metaPct = input.int(defval=6, title="Day % Goal", minval=1, step=1, group="Risk Management")
 i_fixContract = input.bool(title="Use a Fix Contract Size per Operation", defval=true, group="Risk Management")
-i_contractSize = input.int(defval=10, title="Number of contracts per op", minval=1, step=1, group="Risk Management")
+i_contractSize = input.float(defval=10, title="Number of contracts per op", minval=1, step=1, group="Risk Management")
 i_riskPercent = input.float(defval=5, title="Numb of contracts based on % of equitiy", minval=0, step=0.1, group="Risk Management")
 
 i_showFills   = input(true,   "Show HA order", group="HA Chart")

@@ -1,0 +1,257 @@
+//@version=5
+strategy("Ut-EMA [DailyPanda]",
+     shorttitle="Ut-EMA",
+     overlay = true,
+     initial_capital=2000,
+     currency=currency.USD,
+     commission_type=strategy.commission.percent,
+     commission_value=0.00,
+     slippage=3
+     )
+
+
+import TradingView/Strategy/3 as tvS
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// INPUTS
+//---------------------------------------------------------------------------------------------------------------------{
+
+i_plotexits = input.bool(title="Plot TP and SL", defval=true, group="Trade")
+i_riskReward = input.float(defval=3, title="Risk Reward Per Operation", step=0.1, group="Trade")
+i_lookbackPeriod = input.int(defval=20, title="Number of bars back for Swing High and Low (STOPLOSS)", step=1, group="Trade")
+
+i_startTime = input.int(defval=0, title="Start Trading at: (H)", minval=0, group="Trading Time")
+i_stopTime = input.int(defval=24, title="Stop Trading at: (H)", minval=0, maxval=24, step=1, group="Trading Time")
+
+i_meta = input.bool(title="Stop at Day Goal", defval=true, group="Risk Management")
+i_metaPct = input.int(defval=6, title="Day % Goal", minval=1, step=1, group="Risk Management")
+i_lossPct = input.int(defval=6, title="% max Day DD", minval=1, maxval=100, step=1, group="Risk Management")
+i_contractSize = input.float(defval=0.15, title="Number of contracts per op", minval=0.01, step=0.05, group="Risk Management")
+i_closeEos = input.bool(title="Close Trades at End of Session? ", defval=true, group="Risk Management")
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// RISK MANAGEMENT
+//---------------------------------------------------------------------------------------------------------------------{
+
+strategy.risk.max_intraday_loss(i_lossPct, strategy.percent_of_equity)
+// Store equity value from the beginning of the day
+eqFromDayStart = ta.valuewhen(ta.change(dayofweek) > 0, strategy.equity, 0)
+openvalueDay = ta.valuewhen(ta.change(dayofweek) > 0, open, 0)
+f_firstBar = session.isfirstbar_regular and session.ismarket ? true : false
+f_lastBar = session.islastbar_regular ? true : false
+
+// Calculate change of the current equity from the beginning of the current day.
+eqChgPct = 100 * ((strategy.equity - eqFromDayStart - strategy.openprofit) / (strategy.equity-strategy.openprofit))
+f_stopGain = eqChgPct >= i_metaPct and i_meta ? true : false
+
+var float commisionPaid = 0
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Functions / Methods
+//---------------------------------------------------------------------------------------------------------------------{
+
+//swing high/low
+f_swingPoint(_lookback, _high_low) =>
+    var float swingPoint = na
+    for i = 2 to _lookback // start from 2 to avoid negative indexing
+        if _high_low == 'high'
+            if high[i] > high[i-1] and high[i] > high[i-2] and high[i] > high[i+1] and high[i] > high[i+2]
+                swingPoint := high[i]
+        else
+            if low[i] < low[i-1] and low[i] < low[i-2] and low[i] < low[i+1] and low[i] < low[i+2]
+                swingPoint := low[i]
+    swingPoint
+
+
+
+//---------------------------------------------------------------------------------------------------------------------
+// UT-BOT
+//---------------------------------------------------------------------------------------------------------------------
+
+xATR = ta.atr(10)
+nLoss = 5 * xATR
+
+src = request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close, lookahead=barmerge.lookahead_off)
+
+xATRTrailingStop = 0.0
+iff_1 = src > nz(xATRTrailingStop[1], 0) ? src - nLoss : src + nLoss
+iff_2 = src < nz(xATRTrailingStop[1], 0) and src[1] < nz(xATRTrailingStop[1], 0) ? math.min(nz(xATRTrailingStop[1]), src + nLoss) : iff_1
+xATRTrailingStop := src > nz(xATRTrailingStop[1], 0) and src[1] > nz(xATRTrailingStop[1], 0) ? math.max(nz(xATRTrailingStop[1]), src - nLoss) : iff_2
+
+pos = 0
+iff_3 = src[1] > nz(xATRTrailingStop[1], 0) and src < nz(xATRTrailingStop[1], 0) ? -1 : nz(pos[1], 0)
+pos := src[1] < nz(xATRTrailingStop[1], 0) and src > nz(xATRTrailingStop[1], 0) ? 1 : iff_3
+
+xcolor = pos == -1 ? color.red : pos == 1 ? color.green : color.blue
+
+ema = ta.ema(src, 1)
+above = ta.crossover(ema, xATRTrailingStop)
+below = ta.crossover(xATRTrailingStop, ema)
+
+buy = src > xATRTrailingStop and above
+sell = src < xATRTrailingStop and below
+
+barbuy = src > xATRTrailingStop
+barsell = src < xATRTrailingStop
+
+plotshape(buy, title='Buy', text='Buy', style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.new(color.white, 0), size=size.tiny)
+plotshape(sell, title='Sell', text='Sell', style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), textcolor=color.new(color.white, 0), size=size.tiny)
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// EMA
+//---------------------------------------------------------------------------------------------------------------------{
+
+loockback= 5
+loockback_hl    =   2   
+emah    =   ta.ema(ta.highest(high,loockback_hl), 100)
+emal    =   ta.ema(ta.lowest(loockback_hl), 100)
+
+eH   =   plot(emah, color= emah > emah[loockback] ? color.green: color.red, linewidth=1)
+eL   =   plot(emal, color=emal<emal[loockback] ? color.red : color.green,  linewidth=1)
+
+
+buyEma = close>emah and emah > emah[loockback] and emal > emal[loockback] ? true : false
+sellEma = close<emal and emal<emal[loockback] and emah<emah[loockback] ? true : false
+
+fill(eH,eL, color=  buyEma? color.new(color.green,70) : sellEma  ? color.new(color.red,70) : color.new(color.black, 30))
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// STRATEGY
+//---------------------------------------------------------------------------------------------------------------------{
+f_dateFilter = hour >= i_startTime and hour < i_stopTime
+
+// Get the last swing low within the lookback period
+lastSwingLow = f_swingPoint(i_lookbackPeriod, 'low')
+lastSwingHigh = f_swingPoint(i_lookbackPeriod, 'high')
+
+// Plot the last swing low
+var float stopLoss = na
+var float takeProfit = na
+posSize = math.abs(strategy.position_size)
+plot(posSize > 0 and i_plotexits ? stopLoss: na, color=color.red, style=plot.style_linebr, linewidth=2, title="Last Swing")
+plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot.style_linebr, linewidth=2, title="TP")
+
+if strategy.closedtrades[1] != strategy.closedtrades
+    commisionPaid := commisionPaid + strategy.closedtrades.commission(strategy.closedtrades-1)
+
+//Long
+if buy and buyEma and posSize == 0 and f_dateFilter and not f_stopGain
+    stopLossDistance = close - lastSwingLow
+    takeProfitDistance = stopLossDistance * i_riskReward
+
+    stopLoss := lastSwingLow
+    takeProfit := close + takeProfitDistance
+
+    strategy.entry(id="S-Long", direction=strategy.long, comment="Entry Long")
+    strategy.exit("TP L", "S-Long", stop=lastSwingLow, limit=close + takeProfitDistance)
+
+
+//SHORT
+if sell and sellEma and posSize == 0 and f_dateFilter and not f_stopGain
+    stopLossDistance = math.abs(close - lastSwingHigh)
+    takeProfitDistance = stopLossDistance * i_riskReward
+
+    stopLoss := lastSwingHigh
+    takeProfit := close - takeProfitDistance
+    
+    strategy.entry(id="S-Short", direction=strategy.short, comment="Entry Short")
+    strategy.exit("Exit S", from_entry="S-Short", stop=lastSwingHigh, limit=close - takeProfitDistance)
+
+
+if i_closeEos
+    tvS.closeAtEndOfSession("S-Short", comment="EoS Sell")
+    tvS.closeAtEndOfSession("S-Long", comment="EoS Long")
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// MONTHLY TABLE
+//---------------------------------------------------------------------------------------------------------------------{
+
+new_month = month(time) != month(time[1])
+new_year = year(time) != year(time[1])
+
+eq = strategy.equity
+
+bar_pnl = eq / eq[1] - 1
+
+cur_month_pnl = 0.0
+cur_year_pnl = 0.0
+
+// Current Monthly P&L
+cur_month_pnl := new_month ? 0.0 : (1 + cur_month_pnl[1]) * (1 + bar_pnl) - 1
+
+// Current Yearly P&L
+cur_year_pnl := new_year ? 0.0 : (1 + cur_year_pnl[1]) * (1 + bar_pnl) - 1
+
+// Arrays to store Yearly and Monthly P&Ls
+var month_pnl = array.new_float(0)
+var month_time = array.new_int(0)
+
+var year_pnl = array.new_float(0)
+var year_time = array.new_int(0)
+
+last_computed = false
+
+if not na(cur_month_pnl[1]) and (new_month or barstate.islastconfirmedhistory)
+    if last_computed[1]
+        array.pop(month_pnl)
+        array.pop(month_time)
+
+    array.push(month_pnl, cur_month_pnl[1])
+    array.push(month_time, time[1])
+
+if not na(cur_year_pnl[1]) and (new_year or barstate.islastconfirmedhistory)
+    if last_computed[1]
+        array.pop(year_pnl)
+        array.pop(year_time)
+
+    array.push(year_pnl, cur_year_pnl[1])
+    array.push(year_time, time[1])
+
+last_computed := barstate.islastconfirmedhistory ? true : nz(last_computed[1])
+
+// Monthly P&L Table    
+var monthly_table = table(na)
+
+if barstate.islastconfirmedhistory
+    monthly_table := table.new(position.bottom_left, columns=15, rows=array.size(year_pnl) + 3, border_width=1)
+
+    table.cell(monthly_table, 0, 0, '', bgcolor=#cccccc)
+    table.cell(monthly_table, 1, 0, 'Jan', bgcolor=#cccccc)
+    table.cell(monthly_table, 2, 0, 'Feb', bgcolor=#cccccc)
+    table.cell(monthly_table, 3, 0, 'Mar', bgcolor=#cccccc)
+    table.cell(monthly_table, 4, 0, 'Apr', bgcolor=#cccccc)
+    table.cell(monthly_table, 5, 0, 'May', bgcolor=#cccccc)
+    table.cell(monthly_table, 6, 0, 'Jun', bgcolor=#cccccc)
+    table.cell(monthly_table, 7, 0, 'Jul', bgcolor=#cccccc)
+    table.cell(monthly_table, 8, 0, 'Aug', bgcolor=#cccccc)
+    table.cell(monthly_table, 9, 0, 'Sep', bgcolor=#cccccc)
+    table.cell(monthly_table, 10, 0, 'Oct', bgcolor=#cccccc)
+    table.cell(monthly_table, 11, 0, 'Nov', bgcolor=#cccccc)
+    table.cell(monthly_table, 12, 0, 'Dec', bgcolor=#cccccc)
+    table.cell(monthly_table, 13, 0, 'Year', bgcolor=#999999)
+    table.cell(monthly_table, 14, 0, 'Add Info', bgcolor=#999999)
+    
+
+
+    for yi = 0 to array.size(year_pnl) - 1 by 1
+        table.cell(monthly_table, 0, yi + 1, str.tostring(year(array.get(year_time, yi))), bgcolor=#cccccc)
+
+        y_color = array.get(year_pnl, yi) > 0 ? color.new(color.green, transp=50) : color.new(color.red, transp=50)
+        table.cell(monthly_table, 13, yi + 1, str.tostring(math.round(array.get(year_pnl, yi) * 100, 2)) +'%', bgcolor=y_color)
+
+    for mi = 0 to array.size(month_time) - 1 by 1
+        m_row = year(array.get(month_time, mi)) - year(array.get(year_time, 0)) + 1
+        m_col = month(array.get(month_time, mi))
+        m_color = array.get(month_pnl, mi) > 0 ? color.new(color.green, transp=70) : color.new(color.red, transp=70)
+
+        table.cell(monthly_table, m_col, m_row, str.tostring(math.round(array.get(month_pnl, mi) * 100, 2)) +'%', bgcolor=m_color)
+
+    table.cell(monthly_table, 14,1, "N. of Trades: " + str.tostring(strategy.closedtrades),text_color=color.white, bgcolor=#999999)
+    table.cell(monthly_table, 14,2, "Commission($): " + str.tostring(math.round(commisionPaid,2)),text_color=color.white, bgcolor=#999999)
+    table.cell(monthly_table, 14,3, "Comission /Profit: " + str.tostring(math.round(commisionPaid*100/strategy.netprofit,2)) + "%",text_color=color.white, bgcolor=#999999)
+    
