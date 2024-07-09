@@ -1,0 +1,149 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © DailyPanda
+
+//@version=5
+strategy("Pullback Candle [DailyPanda]",
+     shorttitle="PB",
+     overlay=true)
+
+import TradingView/Strategy/3 as tvS
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// INPUTS
+//---------------------------------------------------------------------------------------------------------------------{
+
+i_plotexits = input.bool(title="Plot TP and SL", defval=true, group="Trade")
+i_riskReward = input.float(defval=3, title="Risk Reward Per Operation", step=0.1, group="Trade")
+i_lookbackPeriod = input.int(defval=3, title="Number of bars back for Swing High and Low (STOPLOSS)", step=1, group="Trade")
+
+i_startTime = input.int(defval=9, title="Start Trading at: (H)", minval=0, group="Trading Time")
+i_stopTime = input.int(defval=14, title="Stop Trading at: (H)", minval=0, maxval=24, step=1, group="Trading Time")
+
+
+i_maxStop = input.int(defval=150, title="Stop Max Para entrar em operacao", minval=0, step=5, group="Risk Management")
+i_meta = input.bool(title="Stop at Day Goal", defval=true, group="Risk Management")
+i_metaPct = input.int(defval=6, title="Day % Goal", minval=1, step=1, group="Risk Management")
+i_lossPct = input.int(defval=6, title="% max Day DD", minval=1, maxval=100, step=1, group="Risk Management")
+i_maoFixa = input.bool(title="Usar Mao Fixa", defval=true, group="Mao")
+i_contractSize = input.float(defval=5, title="Number of contracts per op", minval=0.01, step=0.05, group="Mao")
+i_closeEos = input.bool(title="Close Trades at End of Session? ", defval=true, group="Risk Management")
+
+//SHOW MOVING AVERAGES
+i_showZone200   = input.bool(title="Show Zone 200 (EMAxSMA)", defval=true, group="Moving Averages")
+i_ma9 = input.bool(title="MA 9", defval=false, group="Moving Averages")
+i_ma20 = input.bool(title="MA 20", defval=false, group="Moving Averages")
+i_ma50 = input.bool(title="MA 50", defval=false, group="Moving Averages")
+i_ma72 = input.bool(title="MA 72", defval=false, group="Moving Averages")
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// RISK MANAGEMENT
+//---------------------------------------------------------------------------------------------------------------------{
+
+strategy.risk.max_intraday_loss(i_lossPct, strategy.percent_of_equity)
+// Store equity value from the beginning of the day
+eqFromDayStart = ta.valuewhen(ta.change(dayofweek) > 0, strategy.equity, 0)
+openvalueDay = ta.valuewhen(ta.change(dayofweek) > 0, open, 0)
+f_firstBar = session.isfirstbar_regular and session.ismarket ? true : false
+f_lastBar = session.islastbar_regular ? true : false
+
+// Calculate change of the current equity from the beginning of the current day.
+eqChgPct = 100 * ((strategy.equity - eqFromDayStart - strategy.openprofit) / (strategy.equity-strategy.openprofit))
+f_stopGain = eqChgPct >= i_metaPct and i_meta ? true : false
+
+var float commisionPaid = 0
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Functions / Methods
+//---------------------------------------------------------------------------------------------------------------------{
+
+//---------------------------------------------------------------------------------------------------------------------}
+// MOVING AVERAGES
+//---------------------------------------------------------------------------------------------------------------------{
+// Get indicator values
+ema9 = ta.ema(close, 9)
+ema20 = ta.ema(close, 20) //9do5
+ema50 = ta.ema(close, 50) //9 do 17
+ema72 = ta.ema(close, 72)
+ema200 = ta.ema(close,200)
+sma200  = ta.sma(close, 200) //9do60
+sma500  = ta.sma(close, 500)
+lower200 = math.min(ema200, sma200)
+ema200falling = ta.falling(ema200, 1)
+sma200falling = ta.falling(sma200, 1)
+
+// Plot 200 MAs danger zone
+z1 = plot(i_showZone200 ? ema200 : na, title="EMA 200", color=color.new(color.lime, 50))
+z2 = plot(i_showZone200 ? sma200 : na, title="SMA 200", color=color.new(color.lime, 50))
+z3 = plot(i_showZone200 ? sma500 : na, title="SMA 500", color=color.new(color.purple, 75))
+
+ma9 = plot(i_ma9 ? ema9 : na, title="EMA 9", color=color.new(color.green, 50))
+ma20 = plot(i_ma20 ? ema20 : na, title="EMA 20", color=color.new(color.red, 50))
+ma50 = plot(i_ma50 ? ema50 : na, title="EMA 50", color=color.new(color.orange, 50))
+ma72 = plot(i_ma72 ? ema72 : na, title="EMA 72", color=color.new(color.purple, 50), style=plot.style_linebr)
+// Fill 200 zone
+fill(z1, z2, title="Zone of Value 200", color=ema200falling ? color.new(color.red,75) : color.new(color.lime, 75))
+
+
+//---------------------------------------------------------------------------------------------------------------------}
+// PULLBACK
+//---------------------------------------------------------------------------------------------------------------------{
+
+//swing high/low filter
+swingHigh = high == ta.highest(high,10) or high[1] == ta.highest(high,10)
+swingLow = low == ta.lowest(low,6) or low[1] ==ta.lowest(low,6)
+
+//user input
+var g_ema    = "PULBACK EMA Filter"
+emaLength    = input.int(title="EMA Length", defval=50, tooltip="Length of the EMA filter", group=g_ema)
+useEmaFilter = input.bool(title="Use EMA Filter?", defval=true, tooltip="Turns on/off the EMA filter", group=g_ema)
+
+// Get EMA filter
+ema = ta.ema(close, emaLength)
+emaFilterLong = not useEmaFilter or close > ema
+emaFilterShort = not useEmaFilter or close < ema
+
+
+//DETECT MARUBUZO
+pullBack =  (close[2] < close[3]) and (close[2] < close[3])
+     and (close[1] < close[2]) and (close > close[1]) and emaFilterLong and swingLow
+     
+
+//---------------------------------------------------------------------------------------------------------------------}
+// STRATEGY
+//---------------------------------------------------------------------------------------------------------------------{
+f_dateFilter = hour >= i_startTime and hour < i_stopTime
+
+
+// Plot the last swing low
+var float stopLoss = na
+var float takeProfit = na
+posSize = math.abs(strategy.position_size)
+plot(posSize > 0 and i_plotexits ? stopLoss: na, color=color.red, style=plot.style_linebr, linewidth=2, title="Last Swing")
+plot(posSize > 0 and i_plotexits ? takeProfit: na, color=color.green, style=plot.style_linebr, linewidth=2, title="TP")
+
+
+if strategy.closedtrades[1] != strategy.closedtrades
+    commisionPaid := commisionPaid + strategy.closedtrades.commission(strategy.closedtrades-1)
+
+// Plot our candle patterns
+plotshape(pullBack, style=shape.xcross,size=size.tiny, color=color.green, text="PB",location=location.belowbar)
+//alertcondition(pullBack, "Pullback Candle ", "Pullback Candle  detected for {{ticker}}")
+barcolor(pullBack ? color.green :na)
+
+if pullBack and posSize == 0 and f_dateFilter and close - math.min(low, low[1], low[2]) <= i_maxStop and not f_stopGain
+    stopLossDistance = close - math.min(low, low[1], low[2])
+    takeProfitDistance = stopLossDistance * i_riskReward
+
+    stopLoss := math.min(low, low[1], low[2])
+    takeProfit := close + takeProfitDistance
+
+    mao = i_maoFixa ? i_contractSize: math.floor(strategy.equity/1000)
+
+    strategy.entry(id="S-Long", direction=strategy.long, qty=mao, comment="Entry Long")
+    strategy.exit("Exit L", "S-Long", qty=mao, stop=stopLoss, limit=close + takeProfitDistance)
+
+
+if i_closeEos
+    tvS.closeAtEndOfSession("S-Long", comment="EoS Long")

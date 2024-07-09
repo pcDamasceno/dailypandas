@@ -1,10 +1,16 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 
 //TODO
-//ADICIONAR FILTOS PARA DIMINUIR A MAO (RISCO DAS OPERACOES)
+//ADICIONAR FILTROS PARA DIMINUIR A MAO (TABELA DE RISCO DAS OPERACOES)
 //    ADX (FORCA DA TENDENCIA) + DIRECAO DAS MEDIAS. CUIDADO COM CONTRAS
-//    PROXIMIDADE DAS 200
-//CONDICOES PARA REMONTAR POSICAO APOS PARCIAL
+
+//CONDICOES PARA REMONTAR/AUMENTAR/STOP POSICAO APOS PARCIAL (PULLBACK)
+//ADICIONAR SEGUNDA PARCIAL
+//CONDUCAO TRADE COM HA CANDLES
+
+//FILTAR REENTRADAS NO TOPO DO DIA
+
+//ADICIONAR PARAMETROS PADRAO PARA CADA MOEDA (WIN/USA500/XAU/BTC)
 
 
 //@version=5
@@ -21,8 +27,8 @@ i_parcialPtos = input.int(defval=180, title="Pontos para Parcial", minval=1, gro
 i_pctParcial = input.int(defval=10, title="Porcentagem da Parcial", minval=0, step=5, group="Risk Management")
 i_ParcialMult = input.int(defval=1, title="Valor de aumento da Parcial baseado no risco", minval=1, maxval=10, step=1, group="Risk Management")
 //CONDUCAO
-i_remontarPosicao = input.bool(title="Remontar Posicao", defval=false, group="Risk Management")
-i_aumentarPosicao = input.bool(title="Aumentar Posicao", defval=false, group="Risk Management")
+//i_remontarPosicao = input.bool(title="Remontar Posicao", defval=false, group="Risk Management")
+//i_aumentarPosicao = input.bool(title="Aumentar Posicao", defval=false, group="Risk Management")
 i_maxStop = input.int(defval=230, title="Stop Max Para entrar em operacao", minval=0, step=5, group="Risk Management")
 i_lossPct = input.int(defval=6, title="% max DD em um dia", minval=1, maxval=100, step=1, group="Risk Management")
 i_meta = input.bool(title="Meta Diaria", defval=false, group="Risk Management")
@@ -39,9 +45,6 @@ i_ma72 = input.bool(title="MA 72", defval=true, group="Moving Averages")
 //FILTROS OPCIIONAIS
 i_filtroMedia = input.bool(title="Posicao da media ZLSMA para filtrar entradas", defval=true, group="Filtro Entrada")
 i_filter200 = input.bool(title="Nao operar em range 200", defval=true, group="Filtro Entrada")
-
-//OPERAR LONG AND SHORT
-i_long = input.bool(title="Operar Long", defval=true, group="Operacoes")
 
 
 //############################## RISK MANAGEMENT ##############################
@@ -158,7 +161,7 @@ f_200range = i_filter200 ? close_within_range : false
 
 //Check BUY conditions
 var int buyStartHand = na
-buyCondition        = posSize == 0 and dir[1] == -1 and f_dateFilter and not f_firstBar and f_position and i_long and (not f_stopGain) and (not f_200range)
+buyCondition        = posSize == 0 and dir[1] == -1 and f_dateFilter and not f_firstBar and f_position and (not f_stopGain) and (not f_200range)
 
 if posSize == 0
     strategy.cancel_all()
@@ -168,31 +171,33 @@ if buyCondition and math.abs(shortStop - math.min(low, low[1], low[2], low[3], l
     mao = i_maoFixa ? i_maoSize: math.floor(strategy.equity/1000)
     buyStartHand := mao
     //deixa ordem pendurada no ShortStop
-    strategy.order(id="CE_B", direction=strategy.long, stop=shortStop, qty=mao, comment="Entrada C", alert_message="Entrada C")
+    strategy.order(id="CE_B", oca_name="OCA2", direction=strategy.long, stop=shortStop, qty=mao, comment="Buy", alert_message="Buy")
     
 var float initalStop = na
 if posSize > 0 and buyCondition[1]
-    stopBuyPrice = math.min(low, low[1], low[2], low[3], low[4], low[5])
+    stopBuyPrice = math.min(low, low[1], low[2], low[3], low[4])
     initalStop := stopBuyPrice
     //INITIAL PARCIAL PRICE 
-    parcialPrice = strategy.position_avg_price+i_parcialPtos
-    //PARCIAL. RISK (VALUE FROM 1-10)
-    parcialMult = ema9 > ema20 and ema20 > ema50 ? 1 : i_ParcialMult
-    strategy.exit(id="CE Buy Exit", from_entry="CE_B", comment="Parcial", oca_name="OCA2", stop=stopBuyPrice, limit=parcialPrice, qty_percent=i_pctParcial*parcialMult, alert_profit="Parcial Compra")      
+
+    if i_useParcial
+        parcialPrice = strategy.position_avg_price+i_parcialPtos
+        //PARCIAL. RISK (VALUE FROM 1-10)
+        parcialMult = ema9 > ema20 and ema20 > ema50 ? 1 : i_ParcialMult
+        strategy.exit(id="CE Buy Exit", from_entry="CE_B", comment="Parcial", oca_name="OCA2", stop=stopBuyPrice, limit=parcialPrice, qty_percent=i_pctParcial*parcialMult, alert_profit="Parcial Compra")      
     //SL
     strategy.exit(id="CE Buy Stop", from_entry="CE_B", comment="SL", oca_name="OCA2", stop=stopBuyPrice, qty_percent=100, alert_message="Long stop loss hit!", alert_loss="Stop Compra")
 
-var bool posRemontada = false
-if posSize > 0 and posRemontada
-    //SL REMONTAGEM
-    strategy.exit(id="CE Remontagem Stop", from_entry="CE_R", comment="SL_R", stop=longStop, qty_percent=100)
-    posRemontada := false
+//var bool posRemontada = false
+//if posSize > 0 and posRemontada
+//    //SL REMONTAGEM
+//    strategy.exit(id="CE Remontagem Stop", from_entry="CE_R", comment="SL_R", stop=longStop, qty_percent=100)
+//    posRemontada := false
 
 var bool parcial200 = true
 var bool parcial500 = true
 //Ajustar Parcial Em Casos de Risco
 ema72falling = ta.falling(ema72, 2)
-if strategy.position_size > 0  and strategy.position_size == buyStartHand
+if strategy.position_size > 0  and strategy.position_size == buyStartHand and i_useParcial
     parcialPrice = strategy.position_avg_price+i_parcialPtos
     parcial200 := true
     parcial500 := true
@@ -210,14 +215,21 @@ if strategy.position_size > 0  and strategy.position_size == buyStartHand
         strategy.exit(id="CE Buy Exit", from_entry="CE_B", comment="Parcial500", oca_name="OCA2", stop=initalStop, limit=parcialPrice, qty_percent=i_pctParcial*8, alert_profit="Parcial 500")
 
 //verificar se a parcial foi realizada para ajustar o posicionamento da parcial e stop
-if strategy.position_size > 0 and posSize < buyStartHand and dir==1
-    strategy.exit(id="CE Buy Stop", from_entry="CE_B", comment="Compra TP", oca_name="OCA2", stop=longStop, qty_percent=100, alert_message="Compra TP", alert_loss="Stop Compra")
+if strategy.position_size > 0 
+    if posSize < buyStartHand and dir==1 and i_useParcial
+        strategy.exit(id="CE Buy Stop", from_entry="CE_B", comment="TP", oca_name="OCA2", stop=longStop, qty_percent=100, alert_message="TP", alert_loss="Stop Compra")
+    //Caso nao use parcial, ajustar stop a partir de X pontos
+    if not i_useParcial and close > strategy.position_avg_price+i_parcialPtos
+        strategy.exit(id="CE Buy Stop", from_entry="CE_B", comment="TP", oca_name="OCA2", stop=longStop, qty_percent=100, alert_message="TP", alert_loss="Stop Compra")
+
+
+
 
     //Tentar remontar posicao
-    cond_remontarPosicao = zl.isBullishEC() or zl.isHammer()
-    if cond_remontarPosicao and i_remontarPosicao
-        strategy.order(id="CE_R", direction=strategy.long, comment="REMONTAGEM", stop=longStop, qty=1+buyStartHand-posSize)
-        posRemontada := true
+//    cond_remontarPosicao = zl.isBullishEC() or zl.isHammer()
+//    if cond_remontarPosicao and i_remontarPosicao
+//        strategy.order(id="CE_R", direction=strategy.long, comment="REMONTAGEM", stop=longStop, qty=1+buyStartHand-posSize)
+//        posRemontada := true
 
 //############################## END BUY STRATEGY ##############################
 

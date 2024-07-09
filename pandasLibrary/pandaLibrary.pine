@@ -1,0 +1,31 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © DailyPanda
+// Last Updated: 7th July, 2024
+// @version=5
+// @description A collection of custom tools & utility functions commonly used in my scripts
+library("PandaLibrary")
+
+// @function Checks if the current bar is a hammer candle based on the given parameters
+// @param float fib (default=0.382) The fib to base candle body on
+// @param bool colorMatch (default=false) Does the candle need to be green? (true/false)
+// @returns A boolean - true if the current bar matches the requirements of a hammer candle
+export getBodySize() => close - open
+
+export getCandleSize() => high - low
+
+export getBodyPct() => getCandleSize() / getBodySize()
+
+export is123buy() =>
+    low[1] < low and low[1] < low[2] and close > close[1]
+
+export is123sell() => 
+    high[1] > high and high[1] > high[2] and close < close[1]
+
+export isInside() => high < high[1] and low < low[1]
+
+export isDoji(float wickSize, float bodySize) => 
+
+export fibProjection(float priceLow, float priceHigh) =>
+    (priceHigh - priceLow) * 1.138 + priceHigh
+
+export maAngle(int ma, int lookback) =
