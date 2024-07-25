@@ -1,10 +1,14 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © DailyPanda
 
+//NEED TO FILTER ENTER NEAR THE HIGHEST OF THE DAY
+
+
 //@version=5
 strategy("Pullback Candle [DailyPanda]",
      shorttitle="PB",
-     overlay=true)
+     overlay=true,
+     pyramiding=3)
 
 import TradingView/Strategy/3 as tvS
 
@@ -91,23 +95,17 @@ fill(z1, z2, title="Zone of Value 200", color=ema200falling ? color.new(color.re
 //---------------------------------------------------------------------------------------------------------------------{
 
 //swing high/low filter
-swingHigh = high == ta.highest(high,10) or high[1] == ta.highest(high,10)
-swingLow = low == ta.lowest(low,6) or low[1] ==ta.lowest(low,6)
-
-//user input
-var g_ema    = "PULBACK EMA Filter"
-emaLength    = input.int(title="EMA Length", defval=50, tooltip="Length of the EMA filter", group=g_ema)
-useEmaFilter = input.bool(title="Use EMA Filter?", defval=true, tooltip="Turns on/off the EMA filter", group=g_ema)
+//THIS BAR OR PREVIOUS MUST BE A RECENT LOW
+swingHigh= high == ta.highest(high,4) or high[1] == ta.highest(high,4)
+swingLow = low == ta.lowest(low,6) or low[1] == ta.lowest(low,6)
 
 // Get EMA filter
-ema = ta.ema(close, emaLength)
-emaFilterLong = not useEmaFilter or close > ema
-emaFilterShort = not useEmaFilter or close < ema
+emaFilterLong = close > ema9 and ta.lowest(low,3) <= ema20 and ta.rising(ema9, 1)
+emaFilterShort = close < ema9 and ta.highest(high,3) >= ema20 and ta.falling(ema9, 1)
 
-
-//DETECT MARUBUZO
-pullBack =  (close[2] < close[3]) and (close[2] < close[3])
-     and (close[1] < close[2]) and (close > close[1]) and emaFilterLong and swingLow
+//DETECT PULLBACK
+pullBackLong = (close[2] < close[3]) and (close[1] < close[2]) and (close > close[1]) and emaFilterLong and swingLow
+pullBackShort = (close[2] > close[3]) and (close[1] > close[2]) and (close < close[1]) and emaFilterShort and swingHigh
      
 
 //---------------------------------------------------------------------------------------------------------------------}
@@ -128,21 +126,37 @@ if strategy.closedtrades[1] != strategy.closedtrades
     commisionPaid := commisionPaid + strategy.closedtrades.commission(strategy.closedtrades-1)
 
 // Plot our candle patterns
-plotshape(pullBack, style=shape.xcross,size=size.tiny, color=color.green, text="PB",location=location.belowbar)
-//alertcondition(pullBack, "Pullback Candle ", "Pullback Candle  detected for {{ticker}}")
-barcolor(pullBack ? color.green :na)
+plotshape(pullBackLong, style=shape.xcross,size=size.tiny, color=color.green, text="PB",location=location.belowbar)
+plotshape(pullBackShort, style=shape.xcross,size=size.tiny, color=color.red, text="PB",location=location.abovebar)
 
-if pullBack and posSize == 0 and f_dateFilter and close - math.min(low, low[1], low[2]) <= i_maxStop and not f_stopGain
+//alertcondition(pullBack, "Pullback Candle ", "Pullback Candle  detected for {{ticker}}")
+barcolor(pullBackLong ? color.green : pullBackShort ? color.red : na)
+
+if pullBackLong and posSize == 0 and f_dateFilter and close - math.min(low, low[1], low[2]) <= i_maxStop and not f_stopGain
     stopLossDistance = close - math.min(low, low[1], low[2])
     takeProfitDistance = stopLossDistance * i_riskReward
 
-    stopLoss := math.min(low, low[1], low[2])
+    stopLoss := math.min(low, low[1], low[2]) - (syminfo.mintick * 2)
     takeProfit := close + takeProfitDistance
 
     mao = i_maoFixa ? i_contractSize: math.floor(strategy.equity/1000)
 
     strategy.entry(id="S-Long", direction=strategy.long, qty=mao, comment="Entry Long")
-    strategy.exit("Exit L", "S-Long", qty=mao, stop=stopLoss, limit=close + takeProfitDistance)
+    strategy.exit("Exit L", "S-Long", qty=mao, stop=stopLoss, limit=takeProfit)
+
+
+// Move stop in case of another pullback
+if posSize > 0 and pullBackLong
+    stopLossDistance = close - math.min(low, low[1], low[2])
+    takeProfitDistance = stopLossDistance * i_riskReward
+    stopLoss := math.min(low, low[1], low[2]) - syminfo.mintick
+    takeProfit := close + takeProfitDistance
+    mao = i_maoFixa ? i_contractSize: math.floor(strategy.equity/1000)
+    
+    strategy.entry(id="S-Long", direction=strategy.long, qty=mao, comment="Entry Long")
+    strategy.exit("Exit L", "S-Long", qty_percent=100, stop=stopLoss, limit=takeProfit)
+
+
 
 
 if i_closeEos
